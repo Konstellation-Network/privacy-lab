@@ -36,9 +36,13 @@ RAILGUN was the strategy's first feasibility path, but its contracts are UNLICEN
 the spike was redirected ([finding 002](reports/002-alternative-privacy-pools.md)).
 The strategy §4 ranks ZK shielded UTXO as the direction; RAILGUN was one route to it.
 
-**Native KASH only.** Native KASH wrapped through `contracts/src/WKASH.sol`, shielded,
-transferred privately, unshielded. Arbitrary ERC-20s are out of scope for V1
-(threat model Q4).
+**Native KASH only.** Deposit, private transfer, withdraw. Arbitrary ERC-20s are
+out of scope for V1 (threat model Q4).
+
+Privacy Pools supports native assets directly, so the WKASH wrapping step the
+RAILGUN plan needed may not apply — one of the first things the spike should
+establish. If wrapping is not required, `contracts/src/WKASH.sol` drops out of the
+flow entirely.
 
 Requirements and exit criteria: *Konstellation Privacy: Threat Model &
 Requirements (V1)*, §8. The short version — a demo where the recipient pays their
