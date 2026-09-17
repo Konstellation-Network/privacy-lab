@@ -8,7 +8,7 @@ which asks that experiments stay outside the consensus-critical chain path until
 design is chosen, so research code cannot quietly become production architecture.
 
 ```
-railgun-poc/     P0-A: RAILGUN compatibility spike against a local Konstellation node
+poc/             P0-A: compatibility spike against a local Konstellation node
 reports/         measurements, compatibility findings, decisions
 ```
 
@@ -20,16 +20,23 @@ From the strategy's Appendix A (agent guardrails), and binding here:
 - Never modify consensus, ante handlers, bank accounting, staking, IBC or genesis
   parameters for a proof of concept.
 - Never fork `cosmos/evm`, `cosmos-sdk`, `cometbft` or `ibc-go` (`ENGINEERING.md §2.1`).
-- Never vendor RAILGUN's contracts into the org. They are an external test
-  dependency, pinned by commit.
-- Never call RAILGUN compatibility "proven" until shield → private transfer →
-  unshield succeeds end to end on the exact pinned Konstellation local chain.
+- Never vendor a third-party privacy protocol's contracts into the org. They stay
+  external test dependencies, pinned by commit.
+- Never call compatibility "proven" until deposit → private transfer → withdraw
+  succeeds end to end on the exact pinned Konstellation local chain.
+- Never deploy a dependency whose license does not permit it (finding 001).
 
 `konstellation` remains the only repo that produces a binary.
 
 ## Scope of the current spike (P0-A)
 
-**WKASH only.** Native KASH wrapped through `contracts/src/WKASH.sol`, shielded,
+**Subject: `0xbow-io/privacy-pools-core` (Apache-2.0), pinned at `c312dcd5`.**
+RAILGUN was the strategy's first feasibility path, but its contracts are UNLICENSED
+([finding 001](reports/001-railgun-licensing.md)) and outreach went unanswered, so
+the spike was redirected ([finding 002](reports/002-alternative-privacy-pools.md)).
+The strategy §4 ranks ZK shielded UTXO as the direction; RAILGUN was one route to it.
+
+**Native KASH only.** Native KASH wrapped through `contracts/src/WKASH.sol`, shielded,
 transferred privately, unshielded. Arbitrary ERC-20s are out of scope for V1
 (threat model Q4).
 
