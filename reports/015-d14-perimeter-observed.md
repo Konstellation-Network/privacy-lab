@@ -42,19 +42,56 @@ Error: -32000: kons1fx944mzagwdhx0wz7k9tfztc8g3lkfk6ghu62u: address is frozen
 The decorator reads the EVM `to` field, so a visible recipient is covered even
 when the sender is clean. Also as predicted.
 
-## Test 3 — can the pool pay a frozen recipient? (running)
+## Test 3 — the pool CAN pay a frozen recipient ❌
 
 The case that matters, because here the recipient is **not** in any field the
 decorator reads — it is ABI-encoded inside `Withdrawal.data` and only decoded
 during EVM execution.
 
-Method: deposit and generate a real Groth16 proof naming frozen dev3 as recipient,
-freeze **just before** submission so the 60 s emergency window is still live, then
-submit `Entrypoint.relay()` from an unfrozen account.
+Method: deposit 10 KASH, generate a real Groth16 proof naming dev3 as recipient,
+freeze dev3 **after the proof is built** so the 60 s window is live, then submit
+`Entrypoint.relay()` from an unfrozen account.
 
-Prediction from [004](004-d14-perimeter-analysis.md): **not enforced** — the
-decorator sees only the Entrypoint as `to`, and the transfer happens inside EVM
-execution, which `ENGINEERING.md §10.1` already lists as unreachable.
+```
+freezing the recipient NOW, with the proof already built…
+submitting relay() directly from an unfrozen account…
+  relay status success gas 489050
+
+frozen recipient received: 3960000000000000000 wei
+NOT ENFORCED — the pool paid a frozen address
+```
+
+Independently verified immediately afterwards, on the same live state:
+
+| Check | Result |
+|---|---|
+| `isFrozen(0x498B…26dA)` | **true** — the freeze was genuinely live |
+| dev3 attempts its own transfer | **`address is frozen`** — still blocked as a sender |
+| dev3 balance | **+3.96 KASH** from the pool |
+
+So the address was frozen, could not transact itself, and was paid anyway.
+
+**Finding 004's prediction is confirmed by observation.** The ante decorator sees
+only the `Entrypoint` as the EVM `to`; the real recipient is inside opaque
+calldata, and the transfer happens inside EVM execution —
+`ENGINEERING.md §10.1`'s documented blind spot.
+
+### What this means in practice
+
+This is **worse than the leak D14 accepts**. D14's case needs a *fresh, unlisted*
+address the authority never had a claim on. This one needs nothing: an address
+already on the block list can be paid directly out of the pool, today, by anyone
+willing to submit the transaction.
+
+What still holds: the frozen address cannot *deposit* (test 1), cannot be a
+*direct* recipient (test 2), and — per [008](008-asp-changes-the-d14-picture.md) —
+cannot withdraw at all if the ASP set excludes its label. **The ASP is the control
+that actually covers this case**, not the ante decorator.
+
+That makes the ASP operator's curation load-bearing rather than advisory, and
+sharpens the recommendation in 008: if a pool ever ships, the association set is
+the enforcement point, and whoever publishes it holds a key of the same class as
+the freeze authority.
 
 ## A real operational lesson, found by accident
 
