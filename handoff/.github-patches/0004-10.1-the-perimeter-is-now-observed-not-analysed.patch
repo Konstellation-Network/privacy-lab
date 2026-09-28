@@ -1,0 +1,114 @@
+From 6714a4a719c28584c66a8dd0d175b742797e1936 Mon Sep 17 00:00:00 2001
+From: Samuel Dahunsi <dahunsisamuel1st@gmail.com>
+Date: Wed, 23 Sep 2026 15:21:31 +0100
+Subject: [PATCH 4/5] =?UTF-8?q?=C2=A710.1:=20the=20perimeter=20is=20now=20?=
+ =?UTF-8?q?observed,=20not=20analysed?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The P0-A spike ran all three D14 cases against a live node with enforce: true.
+A frozen address cannot deposit and cannot be named as a direct EVM recipient —
+both refused at submission. But a pool CAN pay a frozen address: relay()
+succeeded and delivered 3.96 KASH, with the freeze verified live at that moment
+(the address could not send its own transaction, and was paid anyway).
+
+That is worse than the leak D14 otherwise accepts. D14's case needs a fresh,
+unlisted address the authority never had a claim on; this one needs none. The
+association set, not the ante decorator, is the control that covers it — which is
+the concrete reason the set's publisher is a key of the same class as the freeze
+authority.
+
+Also records an operational finding from the same run: an emergency freeze is a
+holding action, not an enforcement mechanism. It expired mid-test while a proof
+was generating. With a 24h mainnet timelock the window is wider but the shape is
+identical, so any runbook built on emergency freeze needs an explicit
+ratification step.
+
+- ENGINEERING.md §10.1: observed results table and the operational note
+- ENGINEERING.md §11 D14: marked confirmed by observation
+- STATUS.md §2: P0-A completion row, with what it does and does not claim
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+---
+ ENGINEERING.md | 32 ++++++++++++++++++++++++++++++--
+ STATUS.md      |  1 +
+ 2 files changed, 31 insertions(+), 2 deletions(-)
+
+diff --git a/ENGINEERING.md b/ENGINEERING.md
+index e39a7f5..0cb623f 100644
+--- a/ENGINEERING.md
++++ b/ENGINEERING.md
+@@ -2,8 +2,9 @@
+ 
+ **Audience:** coding agents and engineers working on any Konstellation repo.
+ **Status:** pre-testnet. Nothing here is deployed yet.
+-**Last updated:** 2026-09-17 (P0-A privacy spike ran: Groth16 verification, a full shielded deposit→withdraw cycle and native-KASH handling all work on Konstellation. D14 and §10.1 amended — a shielded pool can enforce inside the proof via an association set, which the ante decorator cannot reach; its publisher is a second high-value key, now in §10's risk list)
++**Last updated:** 2026-09-23 (P0-A privacy spike complete — all seven exit criteria have results. Privacy Pools works on Konstellation end to end, including the relayer so a recipient pays no gas. §10.1 now records **observed** perimeter behaviour: a frozen address cannot deposit and cannot be a direct recipient, but a pool *can* pay one — the association set, not the ante decorator, is the control that covers it)
+ 
++**Previously, 2026-09-17:** P0-A privacy spike ran:
+ **Previously, 2026-09-16:** D14 decided: privacy/compliance enforcement boundary — gate the shield/unshield perimeter, accept that the shielded interior is unenforceable by the ante decorator; §10.1 added on what the ante decorator actually reaches; §18 compliance rows corrected — mainnet authority is settled, not pending
+ **Previously, 2026-09-15:** D6 list semantics + authority decided; team vesting revocable; testnet gov profile built (PR #7); D6 re-decided to a chain-wide `x/compliance`; §18 testnet-vs-mainnet matrix added; D4 F = 1265 on a 1 B KASH supply; D4–D9, D12 decided; WKASH renamed from WKONS
+ 
+@@ -774,10 +775,37 @@ necessarily knows which deposits are approved, and whose root size bounds the
+ real anonymity set — and a liveness dependency, since withdrawals stop if
+ publication stops.
+ 
++**Observed 2026-09-21, not merely analysed.** The P0-A spike ran all three cases
++against a live node with `enforce: true`:
++
++| Case | Result |
++|---|---|
++| Frozen address deposits | **refused** at submission — `address is frozen` |
++| Frozen address named as a direct EVM recipient | **refused** — the decorator reads `to` |
++| Pool pays a frozen address via `relay()` | **succeeded** — 3.96 KASH delivered |
++
++In the third case the freeze was verified live at the moment of payment: the
++address could not send its own transaction, and was paid anyway. The recipient sat
++inside ABI-encoded calldata, so the decorator saw only the pool contract as `to`.
++
++That is worse than the leak D14 otherwise accepts. D14's case needs a *fresh,
++unlisted* address the authority never had a claim on; this one needs none — an
++address already on the block list can be paid out of a pool by anyone willing to
++submit the transaction. **The association set, not the ante decorator, is the
++control that covers it**, which is why the set's publisher is a key of the same
++class as the freeze authority (§10).
++
+ The residual leak, if no such layer exists or the set is not curated: shield
+ before a freeze, unshield to a fresh address after, bounded to funds already
+ shielded at freeze time.
+ 
++One operational note from the same run: an **emergency freeze is a holding action,
++not an enforcement mechanism.** It expires after one timelock unless ratified, and
++on the dev chain it lapsed mid-test while a proof was being generated. With a 24 h
++mainnet timelock the window is wider but the shape is identical — any runbook built
++on emergency freeze needs an explicit ratification step, or the freeze quietly
++expires.
++
+ ---
+ 
+ ## 11. Open decisions
+@@ -802,7 +830,7 @@ for the *decisions*.
+ | D11 | ~~Governance params~~ **DECIDED: min deposit ~~10~~ **1 000 KASH**, expedited ~~50~~ **5 000 KASH** (raised 2026-09-15 once a 1 B supply was assumed; was 10 / 50 from 2026-09-13); deposits refundable on every outcome except veto (2026-09-15, pinned); voting period 3d, quorum 33.4%, threshold 50% (2026-09-14, SDK/Cosmos Hub defaults except voting period)** | — | `app/config/chain.go` + `app/app.go` `DefaultGenesis` (konstellation PR #6). `ExpeditedVotingPeriod` (1d), `VetoThreshold` (33.4%), `ExpeditedThreshold` (66.7%) left at SDK default — not named by D11. testnet-1/dev run 2 h / 30 min / 10 / 50 via the §18 profile (PR #7). Lengthen voting period later as the validator set decentralises. |
+ | D13 | ~~Krakatoa app-side EVM mempool~~ **DECIDED 2026-09-14: keep ON** (matches cosmos/evm v0.7 default; `init` already writes `mempool.type = "app"` — no code change needed) | — | Independent of BlockSTM. Every validator's `config.toml`+`app.toml` must agree; turning it off later means coordinating that flip across the whole validator set at once. |
+ | D12 | ~~Vesting mechanism~~ **DECIDED 2026-09-15 (confirmed; was already decided in principle): Solidity vesting contracts**, not `x/auth` vesting accounts | contracts, genesis | KiiChain attributed its exploit to a flaw touching vesting accounts and balance handling. `contracts/src/vesting/` is the next open build item here. **Team vesting is revocable (decided 2026-09-15):** the foundation multisig can revoke a departing team member's grant; unvested tokens return to the treasury, vested tokens stay with the beneficiary. Treasury and community schedules are not revocable. |
+-| D14 | ~~Privacy vs compliance enforcement boundary~~ **DECIDED 2026-09-16: gate the boundary, not the interior.** A shielded pool (if one ships — see the privacy strategy, still pre-decision) is entered and exited by ordinary EVM transactions with visible addresses, so `x/compliance`'s ante decorator already covers shield and unshield: a frozen address cannot sign a `shield()` and cannot be the `to` of an unshield. Transfers *inside* the pool stay private and are **not** enforceable by the chain. **Accepted trade-off:** an address shielded before being frozen can unshield to a fresh unlisted address afterward; the leak is bounded to funds already shielded at freeze time, not eliminated. The shielded pool is **not** allowlist-gated — this preserves D6's decided semantics (the chain never requires allowlisting to transact; only blocklisting stops a tx). | privacy track (P0-A onward), whitepaper | No code change: this is the behaviour `x/compliance` already has, recorded so it is a deliberate choice rather than an accident. The `isVerified`/`isFrozen` precompile at `0x…0900` stays available for contracts that want to enforce more strictly than the chain does — a shield contract *may* call it, but the protocol does not require it. **Amended 2026-09-17** after the P0-A spike: a shielded pool may carry its own second enforcement layer. Privacy Pools proves membership of the depositor in an on-chain *association set* inside the withdrawal circuit, so an excluded deposit cannot produce a valid proof at all — enforcement the ante decorator cannot reach, and stronger than D14 assumed: excluding a frozen depositor's label makes those funds unwithdrawable regardless of recipient, narrowing the accepted leak to the window before the next root is published. The cost is a second highest-value key (the set's publisher), an ongoing curation function, reduced privacy against the set operator, and a liveness dependency — if root publication stops, withdrawals stop. Who holds that key is an open supervisor question, not settled here. Revisit if a shielded pool moves past feasibility (privacy strategy P2) or if legal review of D6 asks for a stricter perimeter. |
++| D14 | ~~Privacy vs compliance enforcement boundary~~ **DECIDED 2026-09-16: gate the boundary, not the interior.** A shielded pool (if one ships — see the privacy strategy, still pre-decision) is entered and exited by ordinary EVM transactions with visible addresses, so `x/compliance`'s ante decorator already covers shield and unshield: a frozen address cannot sign a `shield()` and cannot be the `to` of an unshield. Transfers *inside* the pool stay private and are **not** enforceable by the chain. **Accepted trade-off:** an address shielded before being frozen can unshield to a fresh unlisted address afterward; the leak is bounded to funds already shielded at freeze time, not eliminated. The shielded pool is **not** allowlist-gated — this preserves D6's decided semantics (the chain never requires allowlisting to transact; only blocklisting stops a tx). | privacy track (P0-A onward), whitepaper | No code change: this is the behaviour `x/compliance` already has, recorded so it is a deliberate choice rather than an accident. The `isVerified`/`isFrozen` precompile at `0x…0900` stays available for contracts that want to enforce more strictly than the chain does — a shield contract *may* call it, but the protocol does not require it. **Amended 2026-09-17, confirmed by observation 2026-09-21** (§10.1): a shielded pool may carry its own second enforcement layer. Privacy Pools proves membership of the depositor in an on-chain *association set* inside the withdrawal circuit, so an excluded deposit cannot produce a valid proof at all — enforcement the ante decorator cannot reach, and stronger than D14 assumed: excluding a frozen depositor's label makes those funds unwithdrawable regardless of recipient, narrowing the accepted leak to the window before the next root is published. The cost is a second highest-value key (the set's publisher), an ongoing curation function, reduced privacy against the set operator, and a liveness dependency — if root publication stops, withdrawals stop. Who holds that key is an open supervisor question, not settled here. Revisit if a shielded pool moves past feasibility (privacy strategy P2) or if legal review of D6 asks for a stricter perimeter. |
+ 
+ ---
+ 
+diff --git a/STATUS.md b/STATUS.md
+index dc80608..e03e80a 100644
+--- a/STATUS.md
++++ b/STATUS.md
+@@ -150,6 +150,7 @@ GitHub, private, with an `init` commit only.
+ | D13 Krakatoa mempool (2026-09-14) | keep app-side EVM mempool **ON** — no code change, already the default behaviour | §11 |
+ | D14 privacy/compliance boundary (2026-09-16) | **gate the boundary, not the interior**: shield/unshield are ordinary EVM txs and the ante decorator already covers them; transfers inside a shielded pool are private and unenforceable. Shielded pool is **not** allowlist-gated (preserves D6 semantics). **Accepted leak:** shield before a freeze → unshield to a fresh address after, bounded to funds already shielded. **No code change — this is what `x/compliance` already does** | §10.1, §11, §18 |
+ | D14 amended (2026-09-17) | P0-A spike ran. **Privacy Pools works on Konstellation**: Groth16 verifies, full deposit→withdraw with a real proof, native KASH (no WKASH wrap). Gas 265k deposit / 465k withdraw against a 10M block. **D14 amended** — a pool can enforce *inside the proof* via an association set, which the ante decorator cannot reach and which is stronger than D14 assumed; its publisher is a second high-value key, now in §10's risk list. Open: relayer gate, perimeter test vs `x-compliance`, wallet scanning | §10, §10.1, §11 D14; `privacy-lab/reports/` |
++| P0-A privacy spike complete (2026-09-23) | All seven exit criteria have results (`privacy-lab/reports/001–017`). **Privacy Pools works on Konstellation**: Groth16 verifies, deposit→withdraw with real proofs, native KASH (no wrap), and the **relayer gate passes** — a recipient received 3.96 KASH at nonce 0, having never transacted. Wallet scanning asks pool-wide queries, never user-filtered, so an RPC provider learns interest in the pool but not in a user. **Perimeter observed:** a frozen address cannot deposit and cannot be a direct EVM recipient, but a pool *can* pay one — the association set is the control, not the ante decorator. Not a recommendation to ship: threat-model Q1/Q2 remain supervisor decisions | §10.1, §11 D14; `privacy-lab/reports/` |
+ | cosmos/evm pin | **v0.7.3** (v0.7.2 has GHSA-367m-g444-9mg3) | §2.4, §3, §4.1 |
+ | Go | `go 1.26.0` min, `toolchain go1.26.8` (1.25 is out of support) | §3 |
+ | BlockSTM | OFF; **virtual fee collection also OFF** (same bundle) | §2.5, §7.3 |
+-- 
+2.49.0
+

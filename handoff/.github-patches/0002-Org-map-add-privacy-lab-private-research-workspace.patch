@@ -1,0 +1,50 @@
+From 9d5195a55ae0ab53f6bee7688d3fe8fe3f00a237 Mon Sep 17 00:00:00 2001
+From: Samuel Dahunsi <dahunsisamuel1st@gmail.com>
+Date: Thu, 17 Sep 2026 06:58:24 +0100
+Subject: [PATCH 2/5] Org map: add privacy-lab (private research workspace)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+New repo for the privacy track's feasibility work, per the privacy strategy
+§12: experiments stay outside the consensus-critical chain path so research
+code cannot quietly become production architecture.
+
+Private, and bound by Appendix A's guardrails — no x/privacy, no consensus or
+ante-handler changes, no forks of the four upstream repos, nothing vendored.
+konstellation remains the only repo that produces a binary.
+
+- ENGINEERING.md §5: row in the org map
+- CLAUDE.md: row in the repo table
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+---
+ CLAUDE.md      | 1 +
+ ENGINEERING.md | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 3f7e4ea..3e7fe61 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -51,4 +51,5 @@ find something the next agent must know. Convert relative dates to absolute.
+ | `whitepaper` | versioned PDF releases |
+ | `chain-config` | npm package for dapp developers |
+ | `faucet` | testnet token faucet |
++| `privacy-lab` | privacy research — private; never consensus code, nothing ships |
+ | `.github` | org-wide CODEOWNERS and shared workflows |
+diff --git a/ENGINEERING.md b/ENGINEERING.md
+index 21fbd1b..b5c63b8 100644
+--- a/ENGINEERING.md
++++ b/ENGINEERING.md
+@@ -273,6 +273,7 @@ konstellation-network/
+ │
+ ├── chain-config           ← npm package for dapp devs. Public. (pre-mainnet)
+ ├── faucet                 ← testnet token faucet. Public. (pre-mainnet)
++├── privacy-lab            ← privacy research. PRIVATE. Never consensus code, never ships.
+ └── .github                ← shared workflows, CODEOWNERS template. (pre-mainnet)
+                              (CODEOWNERS itself is per-repo — GitHub has no
+                              org-wide default for it; see §17.)
+-- 
+2.49.0
+

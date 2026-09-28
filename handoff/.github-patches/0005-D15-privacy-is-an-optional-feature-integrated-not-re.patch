@@ -1,0 +1,102 @@
+From 5846692ba1f7042b40167395f0f4b64b10e159e2 Mon Sep 17 00:00:00 2001
+From: Samuel Dahunsi <dahunsisamuel1st@gmail.com>
+Date: Mon, 28 Sep 2026 03:27:50 +0100
+Subject: [PATCH 5/5] D15: privacy is an optional feature, integrated not
+ rebuilt; CreateX preinstalled
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Two decisions taken 2026-09-28.
+
+D15(a): privacy is an OPTIONAL feature, not a defining property. The public path
+stays first-class (threat-model P6) — Konstellation is a chain that offers
+privacy, not a privacy chain. That is the reading consistent with D6's chain-wide
+compliance and D7's permissioned launch, and it keeps D14's accepted leak
+defensible in public rather than in tension with the marketing.
+
+D15(b): integrate 0xbow-io/privacy-pools-core (Apache-2.0, four audits), proven
+working end to end on Konstellation by the P0-A spike. Building our own ZK
+protocol is explicitly out — strategy §13 ranks custom cryptography a
+catastrophic-failure risk and Appendix A says prefer upstream reuse.
+
+Sequencing is deliberately NOT settled by D15: testnet-1 first, mainnet only once
+baseline activity gives a real anonymity set. §18 carries the row, since this is
+a testnet-first difference. A pool launched into thin volume gives its first users
+a guarantee that is sound in form and absent in practice.
+
+Still open before mainnet: who holds the association-set key (§10), and whether
+Cosmos's native ZK-UTXO module (H1 2026, alongside x/poa) supersedes the
+application-layer path.
+
+CreateX is now in the genesis preinstall set, taking it to 11. Pinned in contracts
+from three independent mainnet RPCs with the codeHash matching mainnet's own
+eth_getProof, wired in konstellation/app/preinstalls, and verified on a fresh
+chain — 11,838 bytes on chain and deployCreate() deploys successfully. It is
+AGPL-3.0-only, unlike the rest of the set, which wants an explicit human decision
+before mainnet genesis.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+---
+ ENGINEERING.md | 5 ++++-
+ STATUS.md      | 5 +++--
+ 2 files changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/ENGINEERING.md b/ENGINEERING.md
+index 0cb623f..2128297 100644
+--- a/ENGINEERING.md
++++ b/ENGINEERING.md
+@@ -2,8 +2,9 @@
+ 
+ **Audience:** coding agents and engineers working on any Konstellation repo.
+ **Status:** pre-testnet. Nothing here is deployed yet.
+-**Last updated:** 2026-09-23 (P0-A privacy spike complete — all seven exit criteria have results. Privacy Pools works on Konstellation end to end, including the relayer so a recipient pays no gas. §10.1 now records **observed** perimeter behaviour: a frozen address cannot deposit and cannot be a direct recipient, but a pool *can* pay one — the association set, not the ante decorator, is the control that covers it)
++**Last updated:** 2026-09-28 (**D15 decided**: privacy is an optional feature, and Privacy Pools is integrated rather than rebuilt — testnet-1 first, mainnet only with a real anonymity set. **CreateX added to the genesis preinstall set** (11 total), pinned from three independent mainnet RPCs and verified live)
+ 
++**Previously, 2026-09-23:** P0-A privacy spike complete
+ **Previously, 2026-09-17:** P0-A privacy spike ran:
+ **Previously, 2026-09-16:** D14 decided: privacy/compliance enforcement boundary — gate the shield/unshield perimeter, accept that the shielded interior is unenforceable by the ante decorator; §10.1 added on what the ante decorator actually reaches; §18 compliance rows corrected — mainnet authority is settled, not pending
+ **Previously, 2026-09-15:** D6 list semantics + authority decided; team vesting revocable; testnet gov profile built (PR #7); D6 re-decided to a chain-wide `x/compliance`; §18 testnet-vs-mainnet matrix added; D4 F = 1265 on a 1 B KASH supply; D4–D9, D12 decided; WKASH renamed from WKONS
+@@ -831,6 +832,7 @@ for the *decisions*.
+ | D13 | ~~Krakatoa app-side EVM mempool~~ **DECIDED 2026-09-14: keep ON** (matches cosmos/evm v0.7 default; `init` already writes `mempool.type = "app"` — no code change needed) | — | Independent of BlockSTM. Every validator's `config.toml`+`app.toml` must agree; turning it off later means coordinating that flip across the whole validator set at once. |
+ | D12 | ~~Vesting mechanism~~ **DECIDED 2026-09-15 (confirmed; was already decided in principle): Solidity vesting contracts**, not `x/auth` vesting accounts | contracts, genesis | KiiChain attributed its exploit to a flaw touching vesting accounts and balance handling. `contracts/src/vesting/` is the next open build item here. **Team vesting is revocable (decided 2026-09-15):** the foundation multisig can revoke a departing team member's grant; unvested tokens return to the treasury, vested tokens stay with the beneficiary. Treasury and community schedules are not revocable. |
+ | D14 | ~~Privacy vs compliance enforcement boundary~~ **DECIDED 2026-09-16: gate the boundary, not the interior.** A shielded pool (if one ships — see the privacy strategy, still pre-decision) is entered and exited by ordinary EVM transactions with visible addresses, so `x/compliance`'s ante decorator already covers shield and unshield: a frozen address cannot sign a `shield()` and cannot be the `to` of an unshield. Transfers *inside* the pool stay private and are **not** enforceable by the chain. **Accepted trade-off:** an address shielded before being frozen can unshield to a fresh unlisted address afterward; the leak is bounded to funds already shielded at freeze time, not eliminated. The shielded pool is **not** allowlist-gated — this preserves D6's decided semantics (the chain never requires allowlisting to transact; only blocklisting stops a tx). | privacy track (P0-A onward), whitepaper | No code change: this is the behaviour `x/compliance` already has, recorded so it is a deliberate choice rather than an accident. The `isVerified`/`isFrozen` precompile at `0x…0900` stays available for contracts that want to enforce more strictly than the chain does — a shield contract *may* call it, but the protocol does not require it. **Amended 2026-09-17, confirmed by observation 2026-09-21** (§10.1): a shielded pool may carry its own second enforcement layer. Privacy Pools proves membership of the depositor in an on-chain *association set* inside the withdrawal circuit, so an excluded deposit cannot produce a valid proof at all — enforcement the ante decorator cannot reach, and stronger than D14 assumed: excluding a frozen depositor's label makes those funds unwithdrawable regardless of recipient, narrowing the accepted leak to the window before the next root is published. The cost is a second highest-value key (the set's publisher), an ongoing curation function, reduced privacy against the set operator, and a liveness dependency — if root publication stops, withdrawals stop. Who holds that key is an open supervisor question, not settled here. Revisit if a shielded pool moves past feasibility (privacy strategy P2) or if legal review of D6 asks for a stricter perimeter. |
++| D15 | ~~Does privacy ship, and how?~~ **DECIDED 2026-09-28: privacy is an optional feature, and Privacy Pools is integrated rather than rebuilt.** (a) **Optional, not defining** — the public path stays first-class (threat-model P6); Konstellation is a chain that offers privacy, not a privacy chain. This is the reading consistent with D6's chain-wide compliance and D7's permissioned launch, and it keeps D14's accepted leak defensible in public. (b) **Integrate, never build** — `0xbow-io/privacy-pools-core` (Apache-2.0, four published audits), proven working on Konstellation end to end by the P0-A spike (`privacy-lab/reports/000`). Writing our own ZK protocol is out: strategy §13 ranks custom cryptography a catastrophic-failure risk and Appendix A says prefer upstream reuse. | `contracts`, `infra`, `networks`, whitepaper, D9 audit scope | **Sequencing is not decided by this row.** testnet-1 first, mainnet only once there is enough baseline activity for a real anonymity set — a pool launched into thin volume gives its first users a guarantee that is sound in form and absent in practice (§10.1, threat model §4). Open before mainnet: who holds the association-set key (§10), and whether Cosmos's native ZK-UTXO module (H1 2026, with `x/poa`) supersedes the application-layer path. The pool is **not** allowlist-gated, preserving D6 semantics (D14). |
+ 
+ ---
+ 
+@@ -1029,6 +1031,7 @@ in the same change.
+ | Compliance (D6) | `x/compliance` on; list authority = **a dev multisig / test key**, short timelocks (`local_node.sh`: validator key, 60 s) | `x/compliance` on; list authority = **foundation multisig**, 24 h timelocks — set in `networks/konstellation-1/genesis.json`, after legal review (§10) | same code path, different key holders and timelocks |
+ | Compliance (D6) | `x/compliance` on, list authority = **a dev multisig / test key**, timelocks short (`local_node.sh` uses 60 s) | `x/compliance` on, list authority = foundation multisig, **24 h timelock** (D6, decided 2026-09-15) | same code path, different key holders and timelock lengths |
+ | Compliance enforcement reach (D6, D14) | identical | identical | The ante decorator sees signers, fee payer/granter and *directly visible* recipients. It does **not** see value moved inside EVM execution (an ERC-20 transfer made by a contract), anything inside a shielded pool (D14), or an incoming ICS-20 transfer to a frozen address — IBC middleware, Phase 3 alongside rate limiting (§13). Contracts needing stricter behaviour call the `isFrozen`/`isVerified` precompile themselves. Same on both networks; listed here so the gaps are tracked rather than remembered. |
++| Privacy pool (D15) | **deployed here first**, once testnet-1 exists: Privacy Pools contracts, a relayer in `infra`, and a dev-held association-set key. This is where the operational load — curating the set, running the relayer — gets learned at zero risk | **not at genesis.** Ships only once baseline activity gives a real anonymity set, with a foundation-held association-set key and the D9 audit covering the integration | a pool is only as private as the crowd in it; testnet is where we find out what curation actually costs |
+ | Infra | Hetzner + GCP; GCP validators on **Local SSD** (ephemeral, testnet-1 only, see `infra/README.md`); bastion/monitoring hosts and dedicated Horcrux cosigners still gaps | persistent disks everywhere; Horcrux cosigners, bastion, monitoring, backups all mandatory before genesis | double-sign risk (§2.7) is theoretical on testnet, financial on mainnet |
+ | IBC transfers **to** a frozen address | not gated (x/compliance gates signers, fee payers and direct on-chain recipients; an incoming ICS-20 packet is none of those) | **must be gated before any bridge/IBC channel opens** (D8): Phase 3 IBC middleware alongside rate limiting (§13) | testnet-1 has no external channels; mainnet opens none on day one |
+ | Faucet | required (`faucet` repo) | does not exist | — |
+diff --git a/STATUS.md b/STATUS.md
+index e03e80a..1680db2 100644
+--- a/STATUS.md
++++ b/STATUS.md
+@@ -54,9 +54,9 @@ rather than an incidental one). **Merged** into `main` as `21da290` on 2026-09-1
+ runs x/vm's `Preinstall.Validate`, refuses address collisions with cosmos/evm's
+ `DefaultPreinstalls`, and enforces an EntryPoint↔SenderCreator dependency map (the
+ dependency's address must literally occur in the dependant's bytecode) — so a bad or
+-half re-pin fails at `konstellationd init`, not `InitChain`. Genesis now carries **10
++half re-pin fails at `konstellationd init`, not `InitChain`. Genesis now carries **11
+ preinstalls**: cosmos/evm's 5 + `EntryPointV07`, `SenderCreatorV07`, `EntryPointV08`,
+-`SenderCreatorV08`, `Create2Deployer`. **Merged** into `main` as `dc1a4db` on 2026-09-15;
++`SenderCreatorV08`, `Create2Deployer`, and `CreateX` (added 2026-09-28, D15 work). **Merged** into `main` as `dc1a4db` on 2026-09-15;
+ CI green. A `/code-review` pass found one HIGH before merge — the EntryPoints were
+ shipped without their `SenderCreator`s, which made `getSenderAddress()` and any UserOp
+ with `initCode` revert with empty data (reproduced on a local node) — fixed in `65fa2de`
+@@ -151,6 +151,7 @@ GitHub, private, with an `init` commit only.
+ | D14 privacy/compliance boundary (2026-09-16) | **gate the boundary, not the interior**: shield/unshield are ordinary EVM txs and the ante decorator already covers them; transfers inside a shielded pool are private and unenforceable. Shielded pool is **not** allowlist-gated (preserves D6 semantics). **Accepted leak:** shield before a freeze → unshield to a fresh address after, bounded to funds already shielded. **No code change — this is what `x/compliance` already does** | §10.1, §11, §18 |
+ | D14 amended (2026-09-17) | P0-A spike ran. **Privacy Pools works on Konstellation**: Groth16 verifies, full deposit→withdraw with a real proof, native KASH (no WKASH wrap). Gas 265k deposit / 465k withdraw against a 10M block. **D14 amended** — a pool can enforce *inside the proof* via an association set, which the ante decorator cannot reach and which is stronger than D14 assumed; its publisher is a second high-value key, now in §10's risk list. Open: relayer gate, perimeter test vs `x-compliance`, wallet scanning | §10, §10.1, §11 D14; `privacy-lab/reports/` |
+ | P0-A privacy spike complete (2026-09-23) | All seven exit criteria have results (`privacy-lab/reports/001–017`). **Privacy Pools works on Konstellation**: Groth16 verifies, deposit→withdraw with real proofs, native KASH (no wrap), and the **relayer gate passes** — a recipient received 3.96 KASH at nonce 0, having never transacted. Wallet scanning asks pool-wide queries, never user-filtered, so an RPC provider learns interest in the pool but not in a user. **Perimeter observed:** a frozen address cannot deposit and cannot be a direct EVM recipient, but a pool *can* pay one — the association set is the control, not the ante decorator. Not a recommendation to ship: threat-model Q1/Q2 remain supervisor decisions | §10.1, §11 D14; `privacy-lab/reports/` |
++| D15 + CreateX (2026-09-28) | **Privacy is an optional feature; Privacy Pools is integrated, not rebuilt** (D15). Public path stays first-class. testnet-1 first; mainnet only with a real anonymity set. **CreateX preinstalled** — genesis now carries 11, pinned in `contracts` from three independent mainnet RPCs (codeHash matches mainnet's own `eth_getProof`), wired in `konstellation/app/preinstalls`, verified live: 11,838 bytes on chain and `deployCreate()` works | §11 D15, §18; `contracts/preinstalls/CreateX.json` |
+ | cosmos/evm pin | **v0.7.3** (v0.7.2 has GHSA-367m-g444-9mg3) | §2.4, §3, §4.1 |
+ | Go | `go 1.26.0` min, `toolchain go1.26.8` (1.25 is out of support) | §3 |
+ | BlockSTM | OFF; **virtual fee collection also OFF** (same bundle) | §2.5, §7.3 |
+-- 
+2.49.0
+

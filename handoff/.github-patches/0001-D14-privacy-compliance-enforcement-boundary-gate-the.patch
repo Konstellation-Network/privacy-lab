@@ -1,0 +1,175 @@
+From 5139dfbcfbeaa5442839b3972871e72d8652caea Mon Sep 17 00:00:00 2001
+From: Samuel Dahunsi <dahunsisamuel1st@gmail.com>
+Date: Wed, 16 Sep 2026 17:47:04 +0100
+Subject: [PATCH 1/5] =?UTF-8?q?D14:=20privacy/compliance=20enforcement=20b?=
+ =?UTF-8?q?oundary=20=E2=80=94=20gate=20the=20perimeter?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Records the decision that x/compliance's ante decorator enforces at the
+shield/unshield boundary, not inside a shielded pool, and that this is an
+accepted trade-off rather than an oversight.
+
+The decorator reads addresses out of message structure, so a shielded
+transfer — which names no addresses by construction — is unenforceable by
+it. Shield and unshield are ordinary EVM txs with visible addresses, so
+the perimeter is already covered by the module as built. No code change.
+
+Accepted leak: an address shielded before being frozen can unshield to a
+fresh unlisted address afterward. Bounded to funds already shielded at
+freeze time.
+
+The shielded pool is not allowlist-gated, preserving D6's semantics (the
+chain never requires allowlisting to transact; only blocklisting stops a
+tx). Taken now because x/compliance (PR #10) is being built and the
+boundary would otherwise have been fixed by accident.
+
+- ENGINEERING.md §11: D14 row
+- ENGINEERING.md §10.1: what the ante decorator actually reaches, and
+  what it does not (in-EVM transfers, shielded interiors, inbound ICS-20)
+- ENGINEERING.md §18: compliance rows — mainnet authority is settled, not
+  "pending decision"; enforcement-reach row added so the gaps are tracked
+- STATUS.md §2, §4: D14 recorded; open-decision count corrected to D1–D14
+- STATUS.md header, §2a: PR #10 is open, and its unaddressed genesis
+  finding (InitGenesis bypasses the protected-address rule) is logged as
+  must-fix before networks/ cuts a genesis
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+---
+ ENGINEERING.md | 37 +++++++++++++++++++++++++++++++++++--
+ STATUS.md      | 29 ++++++++++++++++++++---------
+ 2 files changed, 55 insertions(+), 11 deletions(-)
+
+diff --git a/ENGINEERING.md b/ENGINEERING.md
+index 5c9ed9c..21fbd1b 100644
+--- a/ENGINEERING.md
++++ b/ENGINEERING.md
+@@ -2,8 +2,9 @@
+ 
+ **Audience:** coding agents and engineers working on any Konstellation repo.
+ **Status:** pre-testnet. Nothing here is deployed yet.
+-**Last updated:** 2026-09-16 (D6 x/compliance built, PR #10; D6 list semantics + authority decided; team vesting revocable; testnet gov profile built (PR #7); D6 re-decided to a chain-wide `x/compliance`; §18 testnet-vs-mainnet matrix added; D4 F = 1265 on a 1 B KASH supply; D4–D9, D12 decided — all numbered open decisions in §11 are now
+-resolved; WKASH renamed from WKONS)
++**Last updated:** 2026-09-16 (D14 decided: privacy/compliance enforcement boundary — gate the shield/unshield perimeter, accept that the shielded interior is unenforceable; §10.1 added on what the ante decorator actually reaches; §18 compliance rows corrected — mainnet authority is settled, not pending)
++
++**Previously, 2026-09-15:** D6 list semantics + authority decided; team vesting revocable; testnet gov profile built (PR #7); D6 re-decided to a chain-wide `x/compliance`; §18 testnet-vs-mainnet matrix added; D4 F = 1265 on a 1 B KASH supply; D4–D9, D12 decided; WKASH renamed from WKONS
+ 
+ Load this document as context before working in any `konstellation-network/*` repo.
+ Section 2 contains hard constraints that must not be violated without an explicit
+@@ -720,6 +721,35 @@ status to Solidity.
+ 
+ Prior art to study: Provenance, Noble, Canton Network, Kinto, ERC-3643.
+ 
++### 10.1 What enforcement actually reaches (D6 as built, D14)
++
++The ante decorator reads addresses out of *message structure*: signers, the fee
++payer and granter, and the recipients a message names in a field the chain can
++read (`MsgSend.ToAddress`, an EVM tx's `to`, multisend outputs, and so on). That
++is the whole mechanism, and it decides the boundary:
++
++| Reached | Not reached |
++|---|---|
++| Any tx signed by a frozen address, EVM or Cosmos | Value moved *inside* EVM execution — an ERC-20 transfer to a frozen address made by a contract |
++| A frozen address as fee payer or fee granter | Anything inside a shielded pool, whose transactions name no addresses by construction (D14) |
++| A native transfer naming a frozen address as recipient | An incoming ICS-20 transfer to a frozen address (IBC middleware, Phase 3) |
++| Shield and unshield, which are ordinary EVM txs with visible addresses (D14) | |
++
++**The consequence to state plainly:** freezing an EOA guarantees it can never
++sign again and can never be the *direct* recipient of a native transfer. It does
++not guarantee no token ever reaches it. Contracts that must refuse a frozen
++counterparty call `isFrozen()` on the precompile themselves; the chain cannot do
++it for them, and a design that assumes otherwise is wrong about what an ante
++decorator can see.
++
++**D14 applies the same reasoning to privacy.** A shielded pool is entered and
++exited in the open, so the perimeter is already enforced and the interior is
++already invisible — gating the boundary is not a compromise reached under
++pressure, it is the only thing an ante decorator was ever able to do. The
++accepted leak: shield before a freeze, unshield to a fresh address after. Bounded
++to funds already shielded at freeze time. Recorded in D14, and it belongs in the
++whitepaper next to the risks above, not only in the code comments.
++
+ ---
+ 
+ ## 11. Open decisions
+@@ -744,6 +774,7 @@ for the *decisions*.
+ | D11 | ~~Governance params~~ **DECIDED: min deposit ~~10~~ **1 000 KASH**, expedited ~~50~~ **5 000 KASH** (raised 2026-09-15 once a 1 B supply was assumed; was 10 / 50 from 2026-09-13); deposits refundable on every outcome except veto (2026-09-15, pinned); voting period 3d, quorum 33.4%, threshold 50% (2026-09-14, SDK/Cosmos Hub defaults except voting period)** | — | `app/config/chain.go` + `app/app.go` `DefaultGenesis` (konstellation PR #6). `ExpeditedVotingPeriod` (1d), `VetoThreshold` (33.4%), `ExpeditedThreshold` (66.7%) left at SDK default — not named by D11. testnet-1/dev run 2 h / 30 min / 10 / 50 via the §18 profile (PR #7). Lengthen voting period later as the validator set decentralises. |
+ | D13 | ~~Krakatoa app-side EVM mempool~~ **DECIDED 2026-09-14: keep ON** (matches cosmos/evm v0.7 default; `init` already writes `mempool.type = "app"` — no code change needed) | — | Independent of BlockSTM. Every validator's `config.toml`+`app.toml` must agree; turning it off later means coordinating that flip across the whole validator set at once. |
+ | D12 | ~~Vesting mechanism~~ **DECIDED 2026-09-15 (confirmed; was already decided in principle): Solidity vesting contracts**, not `x/auth` vesting accounts | contracts, genesis | KiiChain attributed its exploit to a flaw touching vesting accounts and balance handling. `contracts/src/vesting/` is the next open build item here. **Team vesting is revocable (decided 2026-09-15):** the foundation multisig can revoke a departing team member's grant; unvested tokens return to the treasury, vested tokens stay with the beneficiary. Treasury and community schedules are not revocable. |
++| D14 | ~~Privacy vs compliance enforcement boundary~~ **DECIDED 2026-09-16: gate the boundary, not the interior.** A shielded pool (if one ships — see the privacy strategy, still pre-decision) is entered and exited by ordinary EVM transactions with visible addresses, so `x/compliance`'s ante decorator already covers shield and unshield: a frozen address cannot sign a `shield()` and cannot be the `to` of an unshield. Transfers *inside* the pool stay private and are **not** enforceable by the chain. **Accepted trade-off:** an address shielded before being frozen can unshield to a fresh unlisted address afterward; the leak is bounded to funds already shielded at freeze time, not eliminated. The shielded pool is **not** allowlist-gated — this preserves D6's decided semantics (the chain never requires allowlisting to transact; only blocklisting stops a tx). | privacy track (P0-A onward), whitepaper | No code change: this is the behaviour `x/compliance` already has, recorded so it is a deliberate choice rather than an accident. The `isVerified`/`isFrozen` precompile at `0x…0900` stays available for contracts that want to enforce more strictly than the chain does — a shield contract *may* call it, but the protocol does not require it. Revisit if a shielded pool moves past feasibility (privacy strategy P2) or if legal review of D6 asks for a stricter perimeter. |
+ 
+ ---
+ 
+@@ -940,6 +971,8 @@ in the same change.
+ | Validator set | 5–10 in-house (phase 5), then 3–5 external operators (phase 6) | 5–10 self-run, permissioned at launch (D7); decentralisation roadmap in whitepaper | testnet is where outsiders find the doc gaps |
+ | Value ceiling & bridges | none needed | **value ceiling at launch, no bridge on day one** (D8) | limits mainnet blast radius while the chain soaks |
+ | Compliance (D6) | `x/compliance` on; list authority = **a dev multisig / test key**, short timelocks (`local_node.sh`: validator key, 60 s) | `x/compliance` on; list authority = **foundation multisig**, 24 h timelocks — set in `networks/konstellation-1/genesis.json`, after legal review (§10) | same code path, different key holders and timelocks |
++| Compliance (D6) | `x/compliance` on, list authority = **a dev multisig / test key**, timelocks short (`local_node.sh` uses 60 s) | `x/compliance` on, list authority = foundation multisig, **24 h timelock** (D6, decided 2026-09-15) | same code path, different key holders and timelock lengths |
++| Compliance enforcement reach (D6, D14) | identical | identical | The ante decorator sees signers, fee payer/granter and *directly visible* recipients. It does **not** see value moved inside EVM execution (an ERC-20 transfer made by a contract), anything inside a shielded pool (D14), or an incoming ICS-20 transfer to a frozen address — IBC middleware, Phase 3 alongside rate limiting (§13). Contracts needing stricter behaviour call the `isFrozen`/`isVerified` precompile themselves. Same on both networks; listed here so the gaps are tracked rather than remembered. |
+ | Infra | Hetzner + GCP; GCP validators on **Local SSD** (ephemeral, testnet-1 only, see `infra/README.md`); bastion/monitoring hosts and dedicated Horcrux cosigners still gaps | persistent disks everywhere; Horcrux cosigners, bastion, monitoring, backups all mandatory before genesis | double-sign risk (§2.7) is theoretical on testnet, financial on mainnet |
+ | IBC transfers **to** a frozen address | not gated (x/compliance gates signers, fee payers and direct on-chain recipients; an incoming ICS-20 packet is none of those) | **must be gated before any bridge/IBC channel opens** (D8): Phase 3 IBC middleware alongside rate limiting (§13) | testnet-1 has no external channels; mainnet opens none on day one |
+ | Faucet | required (`faucet` repo) | does not exist | — |
+diff --git a/STATUS.md b/STATUS.md
+index 8a792de..a58c1f9 100644
+--- a/STATUS.md
++++ b/STATUS.md
+@@ -1,11 +1,13 @@
+ # Konstellation — Status & Handoff
+ 
+-**Updated:** 2026-09-16 — **`x/compliance` built: konstellation PR #10, open; two review passes addressed (automated + human), see PR.** The last
+-Phase 2 item; the one custom module. Chain-wide block-list enforcement (EVM + Cosmos, with an
+-immediate "address is frozen" at every submission path), timelocked authority with emergency
+-freeze/expiry, governance override, read-only precompile at `0x…0900`, all verified live.
+-Needs legal review (§10) and the mainnet authority address before it ships. Everything else in
+-Phase 2 is on `main` (`ace9616`).
++**Updated:** 2026-09-16 — Phase 2 is merged except D6. On `konstellation` `main`
++(`ace9616`): D4 √bonded issuance + D5 base-fee burn (#5), restart-panic fix (#8, upstream
++cosmos/evm#1288), gov deposit 1000/5000 + community tax + min_gas_price (#6), grpc bump for
++three new advisories (#9), per-network genesis profiles (#7).
++**Open: PR #10, `x/compliance` (D6)** — the last Phase 2 item and the chain's one custom
++module; reviewed twice, CI green on `ab66ba3`, one open finding (genesis bypasses the
++protected-address rule, §2a). D14 decided 2026-09-16: the privacy/compliance enforcement
++boundary. Next after #10: Phase 3 safety rails.
+ Read after `ENGINEERING.md`. This
+ file is *state*: where we are, why things look the way they do, and what is next.
+ `ENGINEERING.md` is *policy*. When they disagree, `ENGINEERING.md` wins and this file is stale
+@@ -145,6 +147,7 @@ GitHub, private, with an `init` commit only.
+ | D11 | gov: min deposit **1 000 KASH** / expedited **5 000 KASH** (raised 2026-09-15 from 10 / 50, **PR #6 merged `a46cde7` 2026-09-16**), refundable unless vetoed (pinned); voting period **3d**, quorum **33.4%**, threshold **50%** (2026-09-14, merged PR #3 `21da290`). testnet-1/dev: 2 h / 30 min / 10 / 50 (PR #7) | §11, §18; `app/config/chain.go` + `app/app.go` |
+ | D12 vesting (confirmed 2026-09-15) | Solidity vesting contracts, not `x/auth` vesting accounts. `contracts/src/vesting/` — **not yet built** | §11 |
+ | D13 Krakatoa mempool (2026-09-14) | keep app-side EVM mempool **ON** — no code change, already the default behaviour | §11 |
++| D14 privacy/compliance boundary (2026-09-16) | **gate the boundary, not the interior**: shield/unshield are ordinary EVM txs and the ante decorator already covers them; transfers inside a shielded pool are private and unenforceable. Shielded pool is **not** allowlist-gated (preserves D6 semantics). **Accepted leak:** shield before a freeze → unshield to a fresh address after, bounded to funds already shielded. **No code change — this is what `x/compliance` already does** | §10.1, §11, §18 |
+ | cosmos/evm pin | **v0.7.3** (v0.7.2 has GHSA-367m-g444-9mg3) | §2.4, §3, §4.1 |
+ | Go | `go 1.26.0` min, `toolchain go1.26.8` (1.25 is out of support) | §3 |
+ | BlockSTM | OFF; **virtual fee collection also OFF** (same bundle) | §2.5, §7.3 |
+@@ -160,6 +163,7 @@ GitHub, private, with an `init` commit only.
+ |---|---|---|---|
+ | 2026-09-15 | **A restarted node panics on its first EVM tx.** `panic: module account  does not exist: unknown address` from `x/vm` `DeductTxCostsFromUserBalance` in the EVM mempool recheck, on the first `eth_sendRawTransaction` after `konstellationd start` on existing state. | **Root-caused and fixed — konstellation PR #8, merged `642e7b3` 2026-09-16.** `x/vm` routes EVM fees via the SDK's `authante.DeductFees` → `authante.FeeRecipientModule`, a package global that is `""` until `NewDeductFeeDecorator` runs; cosmos/evm v0.7.3 builds its Cosmos ante chain lazily per tx, so the global is only set after the first *Cosmos* tx in the process. Fresh chains get that from InitChain's gentxs; restarts don't. Proven on the unpatched binary: one Cosmos tx after restart makes the EVM tx succeed. Fix: pin the global in `setAnteHandler`. 3/3 restarts now survive. The startup log `failed to initialize rechecker context … invalid height` is a separate self-healing race, not the cause. Upstream: **cosmos/evm#1288** (https://github.com/cosmos/evm/issues/1288, filed 2026-09-15). Our fix does not depend on it. | was blocking testnet-1; **fixed — PR #8 merged `642e7b3`, 2026-09-16** |
+ | 2026-09-15 | Fee collector `Burner` permission is stored on the module account at creation. A network that ever ran a binary without it (or a genesis exported from one) will panic in `BurnCoins` at the first EndBlock with gas used after upgrading to PR #5. | Not a problem for testnet-1 or mainnet, which start on a post-PR-#5 binary. Recorded so the first real upgrade handler pattern includes "rewrite module account permissions" if it ever applies. | note |
++| 2026-09-16 | **`x/compliance` genesis bypasses the protected-address rule** (PR #10, open). Every runtime path — `applyChange`, `emergencyFreeze`, `schedule` — goes through `checkFreezable`, so module accounts, precompiles, governance and the current list authority can never be frozen. `InitGenesis` does not: it writes `gs.Entries` straight in with `m.Set`, and `GenesisState.Validate()` has no keeper so it cannot check. | A `genesis.json` with a block-list entry for the gov module account is immediately unrecoverable: governance cannot execute the proposal to remove it, because executing one requires the gov account to sign. Matters because `networks/testnet-1/genesis.json` has not been cut yet. Fix is a `checkFreezable` call in the `gs.Entries` loop (it has `ctx`). Raised on PR #10; not yet addressed. | must fix before `networks/` cuts a genesis |
+ 
+ ## 3. Things that are deliberate and easy to mistake for bugs
+ 
+@@ -216,9 +220,16 @@ and produces a correct node. Specifically, in `konstellation`:
+ 
+ ## 4. Open decisions
+ 
+-**None remaining.** Every numbered decision (D1–D13) is resolved as of 2026-09-15 —
+-see §2 above and `ENGINEERING.md §11` for the full record. What's left is *building*
+-what D4/D5/D6/D9/D12 call for (§5), not deciding anything further.
++**None remaining.** Every numbered decision (D1–D14) is resolved — D1–D13 as of
++2026-09-15, D14 (privacy/compliance enforcement boundary) on 2026-09-16. See §2
++above and `ENGINEERING.md §11` for the full record. What's left is *building* what
++D4/D5/D6/D9/D12 call for (§5), not deciding anything further.
++
++D14 is a decision *about* the privacy track, not a commitment to build one: whether
++a shielded pool ships at all is still pre-decision (the privacy strategy's P0-A
++feasibility spike). D14 fixes the compliance boundary *if* one does, and was taken
++now because `x/compliance` (PR #10) is being built and the answer would otherwise
++have been baked in by accident.
+ 
+ One non-numbered item still open: the on-call rota (§17) — the model (shared,
+ any engineer, issue-driven, 1-working-day self-assign) is decided, but the rota
+-- 
+2.49.0
+
